@@ -129,7 +129,8 @@ All'interno della tabella identificativa delle GPU è possibile andare a vedere 
 ****
 ## **Threads and streming multiprocessor**
 
-![Immagine tipo Structure](immagini/streMul.jpg)
+<img src="immagini/streMul.jpg" width="450"/>
+<br>
 
 Ogni **thread è eseguito da un Core**.
 Blocchi di thread snno eseguiti da blocchi di core organizzati in **streaming multiprocessor**.
@@ -164,7 +165,8 @@ La soluzione può avvenire tramite due strade, anche combinate:
 
 - **Thread-Level Parallelism**
   
-![Immagine tipo Structure](immagini/tlp.png)
+<img src="immagini/tlp.png" width="450"/>
+<br>
 Schedula tanti thread quanti è possibile trovare all'interno del warp.
 I thread vengono eseguiti appena essi sono pronti, in maniera indipendente tra loro.
 
