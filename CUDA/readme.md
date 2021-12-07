@@ -255,7 +255,7 @@ Questa metodologia viene generalmente applicata quando si desidera **mappare in 
 
 3. Altresì è possibile che la matrice sia mappabile all'interno della griglia ma abbia **taglia ridotta** rispetto ad essa. Quindi sono presenti aree della griglia che non hanno **mappate al di sopra degli elementi della matrice**.
 
-Il primo caso generalmente è riconduibile, tramite la decomposizione in sottomatrici, nei due successivi.
+Il primo caso generalmente è riconducibile, tramite la decomposizione in sottomatrici, nei due successivi.
 
 In generale gli offset fanno riferiento alla dimensione della griglia e dei blocchi e non a quella della matrice da mappare e sono calcolabili come segue:
 
@@ -294,15 +294,61 @@ Kernel del prodotto tra due matrici N*N, ogni thread esegue l'operazione su un s
     }
 ```
 
-Il calcolo di i e j si effettua per ottenere la misura degli offset rispetto alla griglia in cui è mappata.
+Il calcolo di **i e j** si effettua per ottenere la **misura degli offset** rispetto alla griglia in cui è mappata.
 
-Il calcolo dell'index  effettuato per avere il riferimento all'indice della matrice e viene anche in questo caso effettuato in maniera linearizzata.
+Il calcolo dell'index  effettuato per avere il **riferimento all'indice della matrice** e viene anche in questo caso effettuato in maniera linearizzata.
 
 L'**if** all'interno della funzione viene **impiegato per verificare se l'accesso ai dati rientra nell'area di mappatura della matrice o si sta andando oltre**.  Se si sta andando oltre si potrebbe accedere a blocchi impiegati in altro modo, non inerenti alle matrici.
  
-L'inserimento dell'if è molto dispensioso a livello di compilazione (tradotto in una jump e poichè ci sono pipe che hanno cattive prestazioni con istruzioni di salto, le pestazioni calano e la pipe lunga non viene sfruttata) e quindi un modo alternativo per aumentare le prestazioni mantenendo la correttezza è comunque operare sull'intero bloco, nonstante la matrice non sia mappata sull'intero blocco.
+L'inserimento dell'**if è molto dispensioso** a livello di compilazione (tradotto in una jump e poichè ci sono pipe che hanno cattive prestazioni con istruzioni di salto, le prestazioni calano e la pipe lunga non viene sfruttata) e quindi un **modo alternativo per aumentare le prestazioni mantenendo la correttezza è comunque operare sull'intero blocco**, nonstante la matrice non sia mappata sull'intero blocco.
 
-Alcuni thread in parallelo, semplicemente, effettueranno delle operazioni non rilevanti.
+**Alcuni thread** in parallelo, semplicemente, effettueranno delle **operazioni non rilevanti**.
+
+***
+
+# Gestione della memoria in CUDA
+
+Per poter gestire i dati all'interno della GPGPU è necessario allocare della memoria sul device e poi inizializzarla ai dati che desideriamo gestire.
+
+All'interno di CUDA tutte le funzioni hanno come parametro di ritorno **un codice di errore** che può essere anche **cudaSuccess**.
+
+## **cudaMalloc**
+
+Per gestire l'allocazione della memoria sulla GPU si utilizza la funzione:
+
+```c 
+  double *array_device;
+  cudaMalloc((void**) &array_dev, N * sizeof(double));
+```
+
+In questo esempio viene allocato un riferimento alla area di memoria che si desidera allocare sulla GPGPU anche se è memorizzato sull'host.
+
+E' da notare come, essendo in C il passaggio dei parametri unicamente per copia ,si necessita passare l'indirizzo di memoria della variabile su cui si vuole scrivere il valore di ritorno (puntatore), questo poichè la cudaMalloc, come detto precendentemente, ritorna il codice di errore.
+
+Essendo che il valore di ritorno rappresenta un puntatore ad una area di memoria si necessita passare un doppo puntatore.
+
+Si nota come, inoltre, la cudaMalloc abbia bisogno di un void** in quanto la memoria allocata è di tipo generico, pertanto si necessita un casting per la compatibilità del tipo.
+
+Per poter deallocare la memoria viene adoperata la funzione **cudaFree** nella quale va specificato il puntatore all'area di memoria da dover deallocare.
+
+## **cudaMemset**
 
 
+
+## **cudaMemcpy**
+
+Per permettere la inizializzazione della memoria allocata in modo bidirezionale. Vengono grazie a questa direttiva copiati i dati specificati in tre direzioni:
+
+- **H2D**: ovvero dall'host alla GPU. Questa direzione si specifica con la keyword *cudaMemcpyHostToDevice*;
+
+- **D2H**: ovvero dalla GPU alla CPU. Questa direzione si specifica con la keyword *cudaMemcpyDeviceToHost*;
+
+- **cudaMemcpyDeviceToDevice**: ovvero la copia dei dati dalla GPU alla GPU;
+
+*Esempio*:
+
+```c
+    cudaMemcpy(array_dev,array_host, sizeof(array_host,cudaMemcpyDeviceToHost)
+    cudaMemcpy(array_host,array_dev, sizeof(array_dev,cudaMemcpyHostToDevice)
+```
 
