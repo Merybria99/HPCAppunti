@@ -315,7 +315,9 @@ All'interno di CUDA tutte le funzioni hanno come parametro di ritorno **un codic
 ## **cudaMalloc**
 
 Per gestire l'allocazione della memoria sulla GPU si utilizza la funzione:
-
+```c
+    cudaError_t cudaMalloc ( void** devPtr, size_t size )
+```
 ```c 
   double *array_device;
   cudaMalloc((void**) &array_dev, N * sizeof(double));
@@ -332,12 +334,22 @@ Si nota come, inoltre, la cudaMalloc abbia bisogno di un void** in quanto la mem
 Per poter deallocare la memoria viene adoperata la funzione **cudaFree** nella quale va specificato il puntatore all'area di memoria da dover deallocare.
 
 ## **cudaMemset**
+Funzione impiegata per poter inizializzare le aree di memoria allocate sul device.
+```c
+    cudaError_t cudaMemset (void * devPtr, int value, size_t count )
+```
+Il funzionamento è di tipo ottimizzato in quanto sfrutta il DMA della architettura facendo sniffig del bus e facendo al momento opportuno bus stealing.
 
+Per questa funzione la memoria puntata dal primo argmento alvalore specificato nel secondo parametro.
 
 
 ## **cudaMemcpy**
 
-Per permettere la inizializzazione della memoria allocata in modo bidirezionale. Vengono grazie a questa direttiva copiati i dati specificati in tre direzioni:
+Per permettere la inizializzazione della memoria allocata in modo bidirezionale. 
+```c
+cudaError_t cudaMemcpy(void* dst, const void* src, size_t count, cudaMemcpyKind kind)
+```
+Vengono grazie a questa direttiva copiati i dati specificati in tre direzioni:
 
 - **H2D**: ovvero dall'host alla GPU. Questa direzione si specifica con la keyword *cudaMemcpyHostToDevice*;
 
@@ -351,4 +363,192 @@ Per permettere la inizializzazione della memoria allocata in modo bidirezionale.
     cudaMemcpy(array_dev,array_host, sizeof(array_host,cudaMemcpyDeviceToHost)
     cudaMemcpy(array_host,array_dev, sizeof(array_dev,cudaMemcpyHostToDevice)
 ```
+
+La direzione della copia viene però a mancare nel caso in cui utilizziamo Cuda 4.0 o maggiori in quanto essa riesce a comprendere in modo automatico la direzione della copia.
+
+
+## **Esempio completo delle funzioni**
+
+```c
+  #include <stdio.h>
+#include <stdlib.h>
+
+void  initVector(double *u, int n, double c) {
+  int i;
+  for (i=0; i<n; i++)
+      u[i] = c;
+}
+
+__global__ void gpuVectAdd(double *u, double *v, double *z, int N) 
+{
+  // define index
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
+
+  // check that the thread is not out of the vector boundary
+  if (i >= N ) return;
+
+  int index = i; 
+  // write the operation for the sum of vectors 
+  z[index] = u[index] + v[index];
+}
+
+
+int main(int argc, char *argv[]) {
+
+  // size of vectors
+  const int N = 1000;
+
+  // allocate memory on host
+  double * u = (double *) malloc(N * sizeof(double));
+  double * v = (double *) malloc(N * sizeof(double));
+  double * z = (double *) malloc(N * sizeof(double));
+
+  initVector((double *) u, N, 1.0);
+  initVector((double *) v, N, 2.0);
+  initVector((double *) z, N, 0.0);
+
+  // allocate memory on device
+  double *u_dev, *v_dev, *z_dev;
+  cudaMalloc((void **) &u_dev, N*sizeof(double));
+  cudaMalloc((void **) &v_dev, N*sizeof(double));
+  cudaMalloc((void **) &z_dev, N*sizeof(double));
+
+  // copy data from host to device
+  cudaMemcpy(u_dev, u, N*sizeof(double), cudaMemcpyHostToDevice);
+  cudaMemcpy(v_dev, v, N*sizeof(double), cudaMemcpyHostToDevice);
+
+  dim3 block(32);
+  dim3 grid((N-1)/block.x + 1);
+
+  // define the execution configuration
+  gpuVectAdd<<<grid, block>>>(u_dev, v_dev, z_dev, N);
+
+  // copy data from device to host
+  cudaMemcpy(z, z_dev, N*sizeof(double), cudaMemcpyDeviceToHost);
+
+  for(int i=0;i<N;i++)
+  	printf("z\[%d\] = %f\n",i,z[i]);
+
+  // free resources on device
+  cudaFree(u_dev);
+  cudaFree(v_dev);
+  cudaFree(z_dev);
+
+  // free resources on host
+  free(u);
+  free(v);
+  free(z);
+
+  return 0;
+}s
+```
+
+
+
+
+## Compilatore in CUDA
+
+Il compilatore per il processing dei file CUDA lavora attraverso una divisione in due fasi: una fase di **frontend** ed una fase di **backend**.
+
+Nella fase di forntend si occupa della della definizione di codice oggetto **sia per la GPU che per la CPU**. Inoltre il ompilatore genera del codice Qbin e non lo genera per architetture predefinite, ma per diverse architetture. Deve essere quindi **specificata l'architettura per la quale deve essere prodotto il codice**.
+
+```c
+nvcc --arch = compute_37 --code = sm_37 (caso con K80)
+```
+nella quale si specificano sia la compute capability che lo streming multiprocessor della architettura in questo momento impiegata.
+
+
+## **Error handling**
+
+Tutte le system call Nvidia definiscono una variabile cudaError_t come valore di ritorno che permette di verificare lo stato della eseuzione della direttiva.
+
+Il valore della cudaError_t è rappresentato attraverso un intero al quale ci si può riferire nel caso di successo attraverso la define cudaSuccess.
+
+Per la gestione degli errori nel caso in cui essi avvengano nella esecuzione del Kernel, il quale ha un funzionamento bloccante, è necessario andare a leggere una variabile che mantenga al suo interno il valore dell'ultimo errore rintracciato:
+
+```c
+    cudaGetLastError();
+```
+
+la funzione deve essere chiamata a seguito di una sincronizzazione esplicita con il termine della esecuzione del kernel. Ciò può essere implementato attraverso la specifica:
+
+```c
+    cudaDeviceSynchronize();
+```
+
+Alternativamente è possibile adoperare la macro:
+```c
+    #define CUDA_CHECK(X) {\
+      cudaError_t _m_cudaStat = X;\
+      if(cudaSuccess != _m_cudaStat) {\
+        fprintf(stderr,"\nCUDA_ERROR: %s in file %s line %d\n",\
+        cudaGetErrorString(_m_cudaStat), __FILE__, __LINE__);\
+        exit(1);\
+      } \
+    }
+
+    ...
+    
+    CUDA_CHECK( cudaMemcpy(d_buf, h_buf, buffSize, cudaMemcpyHostToDevice));
+```
+
+***
+
+## CUDA Events
+
+Un evento è una particolare variabile impiegata all'interno del codice per marcarlo. 
+Esso ha due finalità:
+- ottenere il tempo di una esecuzione;
+- identificare punti di sincronizzazione della CPU e della GPU;
+
+### **Ottenimento del tempo**
+
+Vengono definite all'interno del programma dei punti di acquisizione di dati istanti temporali.
+
+Si crea un evento di tipo start e stop per l'acquisizione degli istanti temporali. All'inizio del codice da monitorare si effettua un EvenRecord di start e al termine si effettua un EventRecord di stop.
+
+Se si vuole effettivamente assicurare che il tempo preso sia quello del Kernel si deve effettuare una chiamata sincronizzata in modo da non registrare l'evento prima della sua fine.
+
+Per il calcolo della differenxa si chiama la funzione cudaEventElapsedTime nella quale si salva la differenza all'interno della variabile specificata come prima variabile.
+
+*Esempio:*
+
+```c
+  cudaEvent t start, stop;
+  cudaEventCreate(&start);
+  cudaEventCreate(&stop);
+  cudaEventRecord(start);
+  ...
+  kernel<<<grid, block>>>(...);
+  ...
+  cudaEventRecord(stop);
+  cudaEventSynchronize(stop);
+  float elapsed;
+  // execution time between events in ms
+  cudaEventElapsedTime(&elapsed, start, stop);
+  cudaEventDestroy(start);
+  cudaEventDestroy(stop);
+  ```
+
+
+### Bandwidth di un programma in Cuda
+
+All'interno di una applicazione Cuda è importante valutare la memory bandwidth. 
+
+La situazione ideale sarebbe quella di effettuare un unico trasferimento per l'intera mole di dati dalla CPU alla GPU.
+
+Spesso ciò non è possibile quindi è necessario ottimizzare i trasferimenti ed evitare dei tempi di idle della CPU e della GPU.
+
+Per la valutazione della bandwidth del bus allora si effettua un comando che permette di valutare la prestazione del bus dei trasferimenti specificando:
+- **il valore di start delle misurazioni**
+
+- **il valore di stop delle misurazioni**
+
+- **l'offset delle misurazioni**
+
+```c 
+./bandwidthTest --mode=range --start=<B> --end=<B> --increment=<B>
+```
+La misurazione viene effettuata in **MFlop** ovvero il numero di floating point operations per second.
+
 
