@@ -587,16 +587,26 @@ Quanti blocchi di thread possono essere ospitati su un solo SM?
 1. calcolo di registri totali necessari:
 
 ``` 
-numero di blocchi * numero di registri per thread * numero di thread per blocco
+numero di registri totali per blocco= 
+ numero di thread per blocco * numero di registri per thread 
 ```
 
 risultato : 32\*8\*30  =7680
 
 2. calcolo dei possibili blocchi che lo streaming multiprocessor può ospitare.
 ```c 
-numero di registri diaponibili per SM / 
+numero di blocchi allocabili =
+parte intera di (numero di registri disponibili per SM / numero di registri per blocco)
 ```
 
+risultato: 32768 / 7680 = 4
 
+Nel caso in cui il numer di registri varia, varia altresì il numero di blocchi allocabili.
+
+In generale la taglia appropriata di blocchi per una data architettura viene calcolaata attraverso la **TILE_WIDTH** ovvero un dimensionamento 2^x * 2^x thread per blocco.
+
+Alla variazione dei valori di x della tile_width viene calcolata l'effettiva occupazione dei thread disponibili sulla scheda video considerata tramite la compute capability (si deve rispettare il numero massimo di blocchi per ogni SM).
+
+ Si **sceglie la configurazione con la migliore occupazione dei thread disponibili su streaming multiprocessor**.
 
 
