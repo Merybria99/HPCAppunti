@@ -180,12 +180,28 @@ I thread vengono eseguiti appena essi sono pronti, in maniera indipendente tra l
 Il **kernel** si definisce in C con la **keyword \_\_global\_\_** prima di definire una funzione.
 
 Il kernel viene eseguito N volte da N diversi Thread CUDA sulla GPU.
-Ogni thread ha un **un id univoco**, consultabile con la variabile *threadIDx* .
+Ogni thread ha un **un id univoco**, consultabile con la variabile **threadIdx** .
 
 Ogni variabile dichiarata come dim3 realizza una struttura dati i cui campi sono consultabili con .x, .y , .z . 
 A seconda del numero dei parametri passati al costruttore, si dichiara una matrice, un vettore o un parallelogramma.
 
 Per dichiarare  il numero di thread che eseguono il kernel si usa una specifica affiancata al nome del kernel da eseguire.
 
+```c
+kernelFunction<<<numBlocks,numTreads>>>(args...)
+```
+In questo caso possiamo evidenziare **due paramentri**:
+- **numBlocks** (o gridDim): rappresenta la **taglia della griglia** in termini di **blocchi di thread**, lungo ogni dimensione, si dichiara con **dim3**.
+- **numThreads** (o blockDim): la **taglia dei blocchi** rappresentata in thread per o**gni dimensione**, si rappresenta con **dim3**
 
-35
+*Esempio:*
+```c
+  dim3 numThreads(32);
+  //il numero di blocchi è dichiarato comunque dim3 e possiamo definire fino a 3 dimensioni, ogni dimensione è data dalla grandezza della struttura dati da manipolare in quella dimensione, rapportata ai thread disponibili.
+  dim3 numBlocks((N-1)/numThreads.x+1);
+  kernelFunction<<<numBlocks,numThreads>>>(args...);
+
+```
+***
+## Metodologie di calcololo dell' offset
+A seconda della topologia scelta per la nostra griglia e per i suoi blocchi all'interno, il calcolo dell' indice, rappresentativo per ogni thread, cambia.
