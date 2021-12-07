@@ -205,3 +205,28 @@ In questo caso possiamo evidenziare **due paramentri**:
 ***
 ## Metodologie di calcololo dell' offset
 A seconda della topologia scelta per la nostra griglia e per i suoi blocchi all'interno, il calcolo dell' indice, rappresentativo per ogni thread, cambia.
+
+### **Griglia di 1D e Blocchi di 1D**
+<img src="immagini/index1D.jpg" width="450"/>
+<br>
+In questo caso è necessario calcolare l'offest per ogni singolo thread analizzando soltanto la dimensione su x.
+
+```c
+  int index = blockIdx.x * blockDim.x + threadIdx.x;
+```
+Il **primo pezzo** della assegnazione rappresenta **quanti blocchi saltare**, in termini di thread.
+
+Il **secondo pezzo** invece, dato il *b-esimo blocco*, ci dice **quale thread stiamo considerando** di quest' ultimo.
+
+### **Griglia di 1D e Blocchi di 3D**
+<img src="immagini/index-1DGrid-3DBlocks.jpg" width="450"/>
+In questo caso è necessario calcolare l'offset andando a considerare le tre dimensioni del blocco.
+
+```c
+  int index = blockIdx.x * blockDim.x * blockDim.y * blockDim.z +
+              threadIdx.z * blockDim.y * blockDim.x + 
+              threadIdx.y * blockDim.x +
+              threadIdx.x;
+```
+
+SCRIVERE IL PERCHE DI QUESTA COSA (SLIDE 40)
