@@ -529,7 +529,7 @@ Per il calcolo della differenxa si chiama la funzione cudaEventElapsedTime nella
   cudaEventDestroy(start);
   cudaEventDestroy(stop);
   ```
-
+## **Prestazioni di una programma in Cuda**
 
 ### Bandwidth di un programma in Cuda
 
@@ -550,5 +550,53 @@ Per la valutazione della bandwidth del bus allora si effettua un comando che per
 ./bandwidthTest --mode=range --start=<B> --end=<B> --increment=<B>
 ```
 La misurazione viene effettuata in **MFlop** ovvero il numero di floating point operations per second.
+
+
+## Ottimizzazione delle prestazioni 
+
+Attraverso la scelta dei parametri di configurazione del kernel:
+- **gridSize** : numero di blocchi nella griglia;
+- **blockSize** : numero di thread nel blocco;
+
+è possibile prestazioni diverse sulla stessa struttura hardware a seconda dei loro valori.
+
+Per decidere questi valori è necessario:
+
+- rispettare i limiti di thread per blocco, imposti dalla GPU;
+
+- selezionare la configuarzione della griglia in modo che possa processare tutti gli elementi;
+
+- selezionare la taglia dei blocchi per evitare deadlock tra thread e minimizzare la dipendenza tra i kernel eseguiti nei vari thread.
+
+- impiegarei qualificatori propri di CUDA per riferirsi agli id dei blocchi (threadIdx, blockIdx);
+
+### Come effettuare una corretta ottimizzazione
+
+Deve essere ispezionata la scheda tecnica dei CUDA per la GPU effettivamente impiegata.
+Sono di interesse le grandezze di SM disponibili e il numero di core per ognuno di essi.
+
+Oltre al dimensionamento dei core per SM da effettaure deve essere anche effettuata una corretta distribuzione dei registri ad essi. Chiaramente deve essere rispettata la necessità di un numero minimo di registri per ogni kernel o altrimenti verrà rallentata la velocità di esecuzione a causa dei tempi di attesa.
+
+### **Esempio di risoluzione di una configurazione**
+
+``` 
+32768 registri per SM; Kernel con una griglia 32x8 blocchi di thread; il kernel necessita di 30 registri. (il kernel viene eseguito da ogi thread)
+
+Quanti blocchi di thread possono essere ospitati su un solo SM?
+```
+1. calcolo di registri totali necessari:
+
+``` 
+numero di blocchi * numero di registri per thread * numero di thread per blocco
+```
+
+risultato : 32\*8\*30  =7680
+
+2. calcolo dei possibili blocchi che lo streaming multiprocessor può ospitare.
+```c 
+numero di registri diaponibili per SM / 
+```
+
+
 
 
