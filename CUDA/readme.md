@@ -214,12 +214,13 @@ In questo caso è necessario calcolare l'offest per ogni singolo thread analizza
 ```c
   int index = blockIdx.x * blockDim.x + threadIdx.x;
 ```
-Il **primo pezzo** della assegnazione rappresenta **quanti blocchi saltare**, in termini di thread.
+Il **primo pezzo** della assegnazione rappresenta **quanti blocchi saltare**, in termini di thread;
 
-Il **secondo pezzo** invece, dato il *b-esimo blocco*, ci dice **quale thread stiamo considerando** di quest' ultimo.
+Il **secondo pezzo** invece, dato il *b-esimo blocco*, ci dice **quale thread stiamo considerando** di quest' ultimo;
 
 ### **Griglia di 1D e Blocchi di 3D**
 <img src="immagini/index-1DGrid-3DBlocks.jpg" width="450"/>
+<br>
 In questo caso è necessario calcolare l'offset andando a considerare le tre dimensioni del blocco.
 
 ```c
@@ -229,4 +230,79 @@ In questo caso è necessario calcolare l'offset andando a considerare le tre dim
               threadIdx.x;
 ```
 
-SCRIVERE IL PERCHE DI QUESTA COSA (SLIDE 40)
+Il **primo termine** rappresenta il numero di **blocchi da saltare** per arrivare al blocco interessato (rappresentato da blockIdx.x);
+
+Il **secondo** rappresenta il **numero di layer** di thread nel blocco interessato che sono allineati sulla stessa z e che sono **da saltare**;
+
+Il **terzo termine** rappresenta, dato il layer selezionato,**le righe da saltare** per accedere alla riga corretta;
+
+Il **quarto termine** rappresenta l'**id del thread** nella riga;
+
+
+
+### **Griglia d 2D e Blocchi di 2D**
+
+In questo caso il calcolo dell'offset si esplica nella valutazione dell'offset sia nella dimensione x e y della griglia.
+
+<img src="immagini/22.png" width="450"/>
+<br>
+
+Questa metodologia viene generalmente applicata quando si desidera **mappare in memoria una matrice**.
+
+1. Nel caso in cui una matrice abbia **dimensione tale da non poter essere mappata** completamente nella griglia allora è **necessario suddividerla** in sottomatrici;
+
+2. Nel caso in cui la matrice sia completamente **mappata ed esattamente pari alla griglia**;
+
+3. Altresì è possibile che la matrice sia mappabile all'interno della griglia ma abbia **taglia ridotta** rispetto ad essa. Quindi sono presenti aree della griglia che non hanno **mappate al di sopra degli elementi della matrice**.
+
+Il primo caso generalmente è riconduibile, tramite la decomposizione in sottomatrici, nei due successivi.
+
+In generale gli offset fanno riferiento alla dimensione della griglia e dei blocchi e non a quella della matrice da mappare e sono calcolabili come segue:
+
+```c
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
+
+  int j = blockIdx.y * blockDim.y + thredaIdx.y;
+```
+
+Il primo elemento di entrambe le formule viene impiegato per calcolare il numero di blocchi, espresso in thread, da saltare.
+
+I secondi termini rappresentano i thread negli specifici blocchi.
+
+```c
+//rappresentazione dell'indice dopo aver mappato la matrice in memoria attraverso una notazione linearizzata.
+  int index = j * MatrixWidth + i;
+
+  //nel caso in cui si vogliano mappare i dati della matrice con l'intero insieme di blocchi, allora:
+
+  MatrixWidth =  gridDim.x * blockDim.x;
+```
+
+*Esempio*:
+
+Kernel del prodotto tra due matrici N*N, ogni thread esegue l'operazione su un singolo elemento delle stesse.
+
+```c 
+    __global__ void matrixAdd(int N, const float ∗A, const float ∗B, float ∗C) {
+      int i = blockIdx.x ∗ blockDim.x + threadIdx.x;
+      int j = blockIdx.y ∗ blockDim.y + threadIdx.y;
+
+      int index = j ∗ N + i;
+
+      if ( i < N && j < N )
+        C[index] = A[index] + B[index];
+    }
+```
+
+Il calcolo di i e j si effettua per ottenere la misura degli offset rispetto alla griglia in cui è mappata.
+
+Il calcolo dell'index  effettuato per avere il riferimento all'indice della matrice e viene anche in questo caso effettuato in maniera linearizzata.
+
+L'**if** all'interno della funzione viene **impiegato per verificare se l'accesso ai dati rientra nell'area di mappatura della matrice o si sta andando oltre**.  Se si sta andando oltre si potrebbe accedere a blocchi impiegati in altro modo, non inerenti alle matrici.
+ 
+L'inserimento dell'if è molto dispensioso a livello di compilazione (tradotto in una jump e poichè ci sono pipe che hanno cattive prestazioni con istruzioni di salto, le pestazioni calano e la pipe lunga non viene sfruttata) e quindi un modo alternativo per aumentare le prestazioni mantenendo la correttezza è comunque operare sull'intero bloco, nonstante la matrice non sia mappata sull'intero blocco.
+
+Alcuni thread in parallelo, semplicemente, effettueranno delle operazioni non rilevanti.
+
+
+
