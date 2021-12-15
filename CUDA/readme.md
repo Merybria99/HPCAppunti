@@ -746,13 +746,20 @@ Per la cattura degli errori viene invocata la funzione la quale permette di aver
 ```
 
 ```c
+  //inizializza una variabile contenitore di eventuali errori
   mycudaerror=cudaGetLastError() ;
+
   <Call KERNEL>
+  //sincronizzazione tra host e device 
   cudaDeviceSynchronize() ;
+
   mycudaerror=cudaGetLastError() ;
+  //se si sono riscontrati errori durante l'esecuzione del kernel in questo punto vengono gestiti
   if(mycudaerror != cudaSuccess)
-  fprintf(stderr,”%s\n”, cudaGetErrorString(mycudaerror)) ;
+    fprintf(stderr,”%s\n”, cudaGetErrorString(mycudaerror)) ;
 ```
+
+
 
 
   
