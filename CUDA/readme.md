@@ -704,23 +704,55 @@ Ipotesi: architettura fermi in cui ogni SM può gestire 1536 threads e al massim
 Bisogna effettuare delle prove con diversi TILE WIDTH e scegliere il piu conveniente 
 ```
 
-- Scelgo una tile width iniziale di **8**  
+- Scelgo una TILE WIDTH iniziale di **8**  
   <br>
   8 \* 8 = 64 threads per blocco. La scheda fermi ne mette a disposizione 1536, quindi possono essere allocati
   totalmente 1536 / 64 =24 blocchi. Essendo il **massimo numero di blocchi 8**, possono essere impiegati solamente 8 dei
   24 blocchi. Il numero dei thread effettivamente allocati per ogni SM sarà quindi **64 \* 8 = 512** thread.
+  
+  <br>
 
   Avremo quindi una occupazione del 33%.
 
+  <br>
 
-- L'occupazione non è quindi ottimizzata, scegliamo una tile width **16**
+- L'occupazione non è quindi ottimizzata, scegliamo una TILE WIDTH **16**
+
   <br>
   16 \* 16 = 256 threads per blocco. La scheda fermi ne mette a disposizione 1536, quindi possono essere allocati
   totalmente 1536 / 256 = 6 blocchi.
 
   Essendo il **massimo numero di blocchi 8**, possono essere impiegati completamente i 6 blocchi a disposizione.
   Il numero dei thread effettivamente allocati sarà la totalità di quelli a disposizione.
-  
+
+  <br>
+
+  Avremo quindi una occupazione del 100%.
+
+  <br>
+
+- Scegliendo come valore della TILE WIDTH **32** avremo una occupazione del 66%.
+
+Pertanto nel determinare la TILE WIDTH corretta va considerato il parametro di occupazione delle risorse per effettuare la scelta migliore.
+
+## Errori e performance 
+
+E' possibile aggiungere la gestione degli errori in CUDA attraverso l'impiego di alcune direttive.
+
+Per la cattura degli errori viene invocata la funzione la quale permette di avere un ascoltatore di eventuali errori che possono avvenire durante l'esecuzione del kernel.
+
+```c 
+  cudaError_t cudaGetLastError ( void )
+```
+
+```c
+  mycudaerror=cudaGetLastError() ;
+  <Call KERNEL>
+  cudaDeviceSynchronize() ;
+  mycudaerror=cudaGetLastError() ;
+  if(mycudaerror != cudaSuccess)
+  fprintf(stderr,”%s\n”, cudaGetErrorString(mycudaerror)) ;
+```
 
 
   
