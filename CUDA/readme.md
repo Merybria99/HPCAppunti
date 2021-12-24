@@ -798,9 +798,93 @@ La global memory può essere **allocata** in **due** **modi** differenti, o in m
 ### **Cache** per **Global Memory**
 Vediamo come per ogni **blocco** sono disponibili **due cache**, una di **L1** ed una seconda di **L2**. In particolare la **cache di L2** è **associata** allo **Streaming Multiprocessor** e non al blocco.
 
-In realtà quindi più blocchi hano privatamente una cache di L1 e invece condividono una cache di L2.
+In realtà quindi più blocchi hanno privatamente una cache di L1 e invece condividono una cache di L2.
 
-Con al **L2** la **latenza**, **migliora** rispetto alla Global Memory, anche se non è velocissima, infatti ha **25%** di latenza **in meno** **rispetto** alla **Global Memory**. 
+Con la **L2** la **latenza** **migliora** rispetto alla Global Memory, anche se non è velocissima, infatti ha soltanto il **25%** di latenza **in meno** **rispetto** alla **Global Memory**. 
+
+Le operazioni per la gobal memory **passano tutte totalmente per la cache**, essa infatti ricopre il ruolo di un buffer.
+
+### **Cache configurabili**
+
+Per alcune architetture è possibile avere una configurazione manuale delle cache di L1 e delle shared memory.
+
+In generale solitamente si ha una taglia massima da poter bipartire dividendo la memoria totale tra L1 e Shared Memory.
+
+Ad esempio in una architettura Fermi  la taglia massima da poter bipartire è costituita da 64 KB.
+
+Sarebbe possibile in primis suddividerla in modo equo, ma anche con suddivisioni asimmetriche.
+
+```c
+  cudaFuncSetCacheConfig(kernel1, cudaFuncCachePreferL1); // 48KB L1 / 16KB ShMem
+```
+In questo caso la suddivisione avviene allocando 48 KB per la L1 e 16 per la Shared Memory "preferendo" la L1.
+
+```c
+  cudaFuncSetCacheConfig(kernel2, cudaFuncCachePreferShared); // 48KB ShMem / 16KB L1
+```
+In questo caso la suddivisione avviene allocando 48 KB per la Shared Memory e 16 per la L1 "preferendo" la prima.
+
+E' inoltre possibile avere una disabilitazione della cache L1 attraverso la direttiva ***Xptras -djcm = cg***.
+
+E' impossibile invece disabilitare la cache L2 a causa del ruolo centrale da essa ricoperto.
+
+
+
+### **Lettura dei dati in memoria**
+
+E' possibile accedere in lettura alla memoria in modo differenziato a seconda dell disposizione dei dati in essa.
+
+Al variare dell'accesso, inoltre, avviene una variazione anche nella bandwidth ottenuta.
+
+1. Accesso ad **Offset**:  si accede alla memoria attraverso indicizzazione e gli elementi sono adiacenti in memoria;
+
+```c
+  __global__ void offsetCopy(float ∗odata, float∗ idata, int offset) {
+    int xid = blockIdx.x ∗ blockDim.x + threadIdx.x + offset;
+    odata[xid] = idata[xid];
+  }
+```
+
+2. Accesso a **Stride**: necessario, per accedere alle locazioni interessate, saltare degli elementi (stride);
+
+```c
+  __global__ void strideCopy (float ∗odata, float∗ idata, int stride) {
+    int xid = (blockIdx.x∗blockDim.x + threadIdx.x) ∗ stride;
+    odata[xid] = idata[xid];
+  }
+```
+
+### **Ottimizzazione degli accessi alla memoria globale**
+
+Gli accessi alla memoria globale generalmente avvengono ad opera di warp, ovvero raggruppamenti di istruzioni dello stesso tipo. Questa modalità di accesso permette di aumentare la probabilità che gli acessi avvengano allo stesso indirizzo o ad aree di memoria contigue.
+
+<br/>
+
+<img src="immagini/GM1.png" width="450"/>
+<br/>
+
+Sono possibili diverse configurazioni di accesso in memoria da parte dei thread presenti nel warp.
+
+Nel primo caso i thread accedono in maniera perfettamente corrispondente ai dati allocati in memoria sulla cache L1 senza effettuare delle sovrapposizioni. Il bandwidth assicurato è del 100% sia con uso di cache che senza.
+
+Nel secondo caso l'accesso è ugualmente con utilizzo del 100% del bus, ma i dati sono acceduti permutandoli.
+
+
+<br/>
+
+<img src="immagini/GM2.png" width="450"/>
+<br/>
+
+In questi casi, invece si ha una perdita nell'impiego effettivo del bus dei trasferimenti.
+
+Nel primo caso se i dati sono allocati non su una unica linea di cache, ma ipotizziamo su due. Di conseguenza i dati saranno caricati tutti e poi saranno prelevati unicamente quelli utili. L'impiego del bus sarà al 50% con uso di cache. 
+
+Questo aumenta nel caso di eliminazione della cache in quanto saranno caricati unicamente i "pezzi" di memoria necessari. Nel caso in cui ne caricazzimo 5 l'impiego sarebbe dell' 80%.
+
+Nel secondo caso, invece, si ha una collisione degli accessi in una unica locazione si memoria. 
+Con l'impiego della cache la totalità della linea di cache sarà caricata a fronte dell'uso di una unica locazione con impiego del bus del 3,125%.
+
+L'impiego cresce al 12,5% nel caso in cui viene eliminata la cache e si effettua il caricamento di una sola locazione che contiene l'informazione desiderata.
 
 
 
