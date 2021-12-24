@@ -886,8 +886,11 @@ Con l'impiego della cache la totalità della linea di cache sarà caricata a fro
 
 L'impiego cresce al 12,5% nel caso in cui viene eliminata la cache e si effettua il caricamento di una sola locazione che contiene l'informazione desiderata.
 
+### **Ottimizzazione letture stride**
+Con il meccanismo delle cache multiple si potrebbe **ottimizzare** l' **accesso** per **stride** facendo diventare addirittura **migliore** rispetto all' accesso per **offset**.
+C'è però bisogno che **la memoria e i warp** vengano **configurati** in maniera opportuna essendo gli accessi pensati per una configurazione **in 2D**.
 
-
+Per face ciò CUDA fornisce un **metodo di allocazione** della memoria **alternativo** denominato *cudaMallocPitch*. Questa funzione ritorna un intero detto **pitch** che tiene conto delle **dimensioni** reali della memoria in **2D**, così da poter **effettuare** i **salti** mediante lo stride.
 
 
 
