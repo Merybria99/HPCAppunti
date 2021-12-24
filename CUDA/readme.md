@@ -508,7 +508,7 @@ int main(int argc, char *argv[]) {
 }s
 ```
 
-## Compilatore in CUDA
+## **Compilatore in CUDA**
 
 Il compilatore per il processing dei file CUDA lavora attraverso una divisione in due fasi: una fase di **frontend** ed
 una fase di **backend**.
@@ -566,7 +566,7 @@ Alternativamente è possibile adoperare la macro:
 
 ***
 
-## CUDA Events
+## **CUDA Events**
 
 Un evento è una particolare variabile impiegata all'interno del codice per marcarlo. Esso ha due finalità:
 
@@ -735,7 +735,7 @@ Bisogna effettuare delle prove con diversi TILE WIDTH e scegliere il piu conveni
 
 Pertanto nel determinare la TILE WIDTH corretta va considerato il parametro di occupazione delle risorse per effettuare la scelta migliore.
 
-## Errori e performance 
+## **Errori e performance** 
 
 E' possibile aggiungere la gestione degli errori in CUDA attraverso l'impiego di alcune direttive.
 
@@ -758,12 +758,49 @@ Per la cattura degli errori viene invocata la funzione la quale permette di aver
   if(mycudaerror != cudaSuccess)
     fprintf(stderr,”%s\n”, cudaGetErrorString(mycudaerror)) ;
 ```
+<br>
 
+# **Gerarchia di memorie in CUDA**
+All' interno della **architettura** di una **GPU** è possibile notare come sono presenti **diverse** tipologie di **memoria**, le quali si **differenziano** per tipo di **visibilità** e per **velocità** di **operazioni** input-output.
 
+Quindi a seconda della località dei dati imposta dall' algoritmo che si sta implementando, potrebbe essere, ad esempio, più efficiente, effettuare un caching sulla **Shared Memory**, rispetto che interrogare la **Global Memory**.
 
+In generale esistono cinque tipi di memorie totali.
+- **Due** di queste, sono risorse **assegnate** ai **singoli blocchi** e sono:
+  - **Registri**, sono allocati per ogni streaming multiprocessor, in realtà in ogni SM ha vari core e nel momento della inizializzazione del kernel vado ad allocare dei registri per ogni core, come abbiamo visto precendentemente.
+  - **Shared** Memory
+- Altre **tre** invece sono disponibili, sulla intera GPU e sono persistenti per tutta la durate del kernel  e sono:
+  - **Global** Memory
+  - **Constant** Memory
+  - **Texture** Memory
+***
+## **Global Memory**
+La **memoria** **più grande** disponibile sulla **GPU**, rappresentae lo stesso concetto della RAM per la CPU, l' **esecuzione** del **kernel** **non resetta** la **memoria**, quindi è possibile trovare risultati di kernel precedenti su esecuzioni future.
 
+Inoltre è possibile utilizzare sia in **scrittura** che in **lettura** per **tutti i thread**.
+
+- Il **vantaggio** principale viene rappresentato da una **grande larghezza di banda**, che può arrivare fino ad un **1 TB/s**.
   
+- Lo **svantaggio** invece, viene rappresentato dalla **latenza**, sebbene è possibile trasferire una grande quantita di dati in parallelo, **ogni accesso** alla memoria **costa** dai **400** agli **800**, **cicli di clock**. Mentre sappiamo che una normale operazione, come una addizione, costa soltanto un ciclo di clock.
 
+
+La global memory può essere **allocata** in **due** **modi** differenti, o in maniera **dinamica**, mediante la cudaMalloc, oppure come una variabile globale in **area statica**.
+```c
+  //allocazione della variabile globale in area statica
+  __device__ type variable_name;
+
+  //allocazione della variable globale in maniera dinamica
+  type *pointer_to_variable;
+  cudaMalloc((void**) &pointer_to_variable, size);
+  ...
+  cudaFree(pointer_to_variable)
+```
+### **Cache** per **Global Memory**
+Vediamo come per ogni **blocco** sono disponibili **due cache**, una di **L1** ed una seconda di **L2**. In particolare la **cache di L2** è **associata** allo **Streaming Multiprocessor** e non al blocco.
+
+In realtà quindi più blocchi hano privatamente una cache di L1 e invece condividono una cache di L2.
+
+Con al **L2** la **latenza**, **migliora** rispetto alla Global Memory, anche se non è velocissima, infatti ha **25%** di latenza **in meno** **rispetto** alla **Global Memory**. 
 
 
 
