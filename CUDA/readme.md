@@ -962,9 +962,24 @@ Bisogna però assicurarsi che tutti i thread riescano a raggiungere la barriera 
 ```c
 __synchthreads();
 ```
+***
+### **Problematiche** di **accesso** alla **shared memory**
+Vediamo quali **problematiche** possono scaturire nel caso più **thread** vogliono accedere in **contemporanea** a diversi pezzi della **shared memory**.
 
-### **Problematiche** di **accesso** alla shared memory
-Vediamo che problematiche possono scaturire nel caso più thread vogliono accedere in contemporanea a diversi pezzi della shared memory
+ Ricordando che l'accesso viene effettuato per warp e generalmente in ogni warp sono repsenti 32 thread, bisogna gestire l'accesso di questi 32 thread alla memoria shared.
+
+Vediamo come è possibile **ottenere** **tre** possibili **configurazioni** differenti: 
+- **Multicast**, abbiamo **N threads**, appartenteni allo **stesso** **warp**, i quali cercano di accedere allo stesso banco di memoria contemporaneamente. Questo **non** risulta un **problema** in quanto, facendo parte dello stesso warp, e dovendo fare la stessa operazione, la **scrittura** da effettuare su quel banco di memoria **è unica**.
+
+  Bisogna soltanto assicurasi che il warp sia simmetrico. 
+
+- **Broadcast**, simile al multicast, in realtà non abbiamo soltanto N thread del warp, ma **tutti** i **thread** del warp **sono coinvolti**, nella scrittura sullo stesso elemento di memoria. Anche in questo caso non vi è nessun problema.
+
+- **Bank Conflict**, in questo caso due o più thread vogliono scrivere, informazioni diverse, sullo stesso banco di memoria, in questo caso nasce un **conflitto**. Inoltre le **operazioni** vengono **serializzate**, si **perde** il **parallelismo**. 
+
+  La serializzazione venendo gestita in hardware, non assicura nemmeno un risultato noto, infatti è possibile ottenere in output delle anomalie sui risultati.
+
+  
 
 
 
