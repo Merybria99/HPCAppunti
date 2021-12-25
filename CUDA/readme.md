@@ -800,7 +800,7 @@ Vediamo come per ogni **blocco** sono disponibili **due cache**, una di **L1** e
 
 In realtà quindi più blocchi hanno privatamente una cache di L1 e invece condividono una cache di L2.
 
-Con la **L2** la **latenza** **migliora** rispetto alla Global Memory, anche se non è velocissima, infatti ha soltanto il **25%** di latenza **in meno** **rispetto** alla **Global Memory**. 
+Con la **L2** la **latenza** **migliora** rispetto alla Global Memory, anche se non è velocissima, infatti ha soltanto il **25%** di latenza **in meno** **rispetto** alla **Global Memory**. Intorno ai 20/50 cicli di clock.
 
 Le operazioni per la gobal memory **passano tutte totalmente per la cache**, essa infatti ricopre il ruolo di un buffer.
 
@@ -892,17 +892,79 @@ C'è però bisogno che **la memoria e i warp** vengano **configurati** in manier
 
 Per face ciò CUDA fornisce un **metodo di allocazione** della memoria **alternativo** denominato *cudaMallocPitch*. Questa funzione ritorna un intero detto **pitch** che tiene conto delle **dimensioni** reali della memoria in **2D**, così da poter **effettuare** i **salti** mediante lo stride.
 
+```c
+  // on host
+ int width = 64, heigth = 64;
+ float ∗devPtr;
+ int pitch;
+ cudaMallocPitch(&devPtr, &pitch, width ∗ sizeof(float), height);
+
+ // on device
+ __global__ myKernel(float ∗devPtr, int pitch, int width, int height){
+    for (int r = 0; r < height; r++) {
+        /*vediamo come bisogna tener conto della dimensione di riga mediante ilpith
+         quest' ultimo infatti deve essere utilizzato per poter saltare correttamente 
+        tra più righe */
+        float ∗row = devPtr + r ∗ pitch; // row = devPtr[r*pitch]
+        
+        for (int c = 0; c < width; c++)
+            float element = row[c];  // element = devPtr[r*pitch][c]
+    }
+ ...
+ }
+```
 
 
+***
+## **Shared Memory**
+La Shared memory viene **condivisa** soltanto all' **interno del blocco**, risulta essere  piccola rispetto alla global memory, infatti in alcune architetture può dividere la sua grandezza con la cache di L1, come detto in precedenza.
 
+Inoltre a differenza della global memory, alla **fine** della esecuzione del **kernel**, le **shared memory vengono resettate**.
+- Il **punto** di **forza** principale di queste **memorie** è la presenza di una latenza molto bassa, infatti le shared memory, per operazione in input-output, hanno una **latenza** di **2 cicli di clock**, con un **throughput** di 32 byte/2 cicli di clock.
 
+- Bisonga però tener conto della possibilità di **race condition** nel caso in cui più **thread** nello **stesso warp** vogliono **scrivere** nella **stessa locazione** di memoria.
 
+### **Allocazione della shared memory**
+Una prima opzione viene rappresentata dalla possibilità di poter **allocare** **staticamente**, a tempo di compilazione, all' interno del **kernel** una variabile sulla shared memory.
 
+```c
+// statically inside the kernel
+__global__ myKernelOnGPU (...) {
+    ...
+    __shared__ type shmem[MEMSZ];
+    ...
+}
+```
+Una seconda opzione invece viene rappresentata dalla possibilità di **allocare** in maniera **dinamica** la, non soltanto lo spazio di memoria nella **shared memory** ma anche la sua dimenione.
+```c
+//creiamo un puntatore  con quantificatore shared e visibilità extern, come nelle variabili globali.
+extern __shared__ type ∗dynshmem;
+// dynamic allocation
+// dynamically sized
+__global__ myKernelOnGPU (...) {
+    ...
+    dynshmem[i] = ... ;
+    ...
+}
+```
+In entrambi i tipi di approcci vediamo come è necessario dover **specificare**, al momento dell' invocazione del kernel, **oltre** alla *GridSize* e alla *BlockSize* anche un **terzo paramentro** rappresentativo della **dimensione** di cui si vuole allocare questa **area** di **memoria**.
+```c
+void myHostFunction() {
+    ...
+    //MEMSZ rappresenta la dimensione con cui allocare l'area di memoria shared
+    myKernelOnGPU<<<gs,bs,MEMSZ>>>();
+ }
+```
+### **Sincronizzazione** dei **thread** **in un blocco**
+Per poter **sincronizzare** tutti i **thread** che stanno **accedendo** ad una **variabile shared** bisogna specificare una ulteriore direttiva CUDA, la quale può essere **comparata** al **concetto** di *Barrier*.
 
+Bisogna però assicurarsi che tutti i thread riescano a raggiungere la barriera poichè il codice continuerà soltanto quando tutti i thread saranno stati bloccati da quest' ultima.
+```c
+__synchthreads();
+```
 
-
-
-
+### **Problematiche** di **accesso** alla shared memory
+Vediamo che problematiche possono scaturire nel caso più thread vogliono accedere in contemporanea a diversi pezzi della shared memory
 
 
 
