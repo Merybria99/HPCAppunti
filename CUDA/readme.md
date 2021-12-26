@@ -767,12 +767,22 @@ Quindi a seconda della località dei dati imposta dall' algoritmo che si sta imp
 
 In generale esistono cinque tipi di memorie totali.
 - **Due** di queste, sono risorse **assegnate** ai **singoli blocchi** e sono:
-  - **Registri**, sono allocati per ogni streaming multiprocessor, in realtà in ogni SM ha vari core e nel momento della inizializzazione del kernel vado ad allocare dei registri per ogni core, come abbiamo visto precendentemente.
+  - **Registri**
   - **Shared** Memory
 - Altre **tre** invece sono disponibili, sulla intera GPU e sono persistenti per tutta la durate del kernel  e sono:
   - **Global** Memory
   - **Constant** Memory
   - **Texture** Memory
+
+***
+## **Registri**
+Allocati per ogni streaming multiprocessor, in realtà in ogni SM ha vari core e nel momento della inizializzazione del kernel vado ad allocare dei registri per ogni core, come abbiamo visto precendentemente.
+
+Vediamo come è anche possibile andare a **limitare** il **numero** di **blocchi** da poter **allocare** o il **numero** di **registri** per ogni thread, aggiungendo delle **direttive** a tempo di compilazione.
+```c
+__global__ void __launch_bounds__(maxThreadsPerBlock, minBlocksPerMultiprocessor)
+```
+
 ***
 ## **Global Memory**
 La **memoria** **più grande** disponibile sulla **GPU**, rappresentae lo stesso concetto della RAM per la CPU, l' **esecuzione** del **kernel** **non resetta** la **memoria**, quindi è possibile trovare risultati di kernel precedenti su esecuzioni future.
@@ -979,17 +989,144 @@ Vediamo come è possibile **ottenere** **tre** possibili **configurazioni** diff
 
   La serializzazione venendo gestita in hardware, non assicura nemmeno un risultato noto, infatti è possibile ottenere in output delle anomalie sui risultati.
 
+  Solitamente il problema del bank conflict **avviene** molto spesso in **array** **2D**, questo poichè la lettura e la scrittura sulla **stessa** **colonna** rappresenta il peggior tipo di **conflitto**.
+
+  - *Esempio*
+
+    Supponendo di avere una **matrice** di **32 x 32 float**, **mappata** in una **shared memory** in cui ogni cella è contenuto un singolo elemento di 4 byte, avremo che più thread accedono allo stesso banco di memoria.
+
+    Ipotizzando che i warp stiano operando sulle righe, essendo di 32 banchi.
+
+    <br/>
+    <img src="immagini/bank_conflict.png" width="450"/>
+    <br/>
+
+    Per risolvere questo problema, si necessita allocare una colonna in più la quale rappresenterà il padding, in questo modo i thread accederanno a banchi diversi.
+    
+      ```c
+      #define TILE_DIM 32
+      ...
+      __shared__ float matr[TILE_DIM][TILE_DIM+1];
+      ``` 
+
+
+***
+## **Constant Memory**
+Un memoria leggermente più grande di una shared memory, all'incirca 64 KB, anche in questo caso vediamo come il **throughtput** è di 32 byte/2 cicli di clock.
+
+La **differenza** principale con la **shared memory** è rappresentata dalla caratteristica di essere una **memoria** **read-only**. 
+
+
+Si ha un vero **vantaggio** nell' **utilizzo** della **constant memory** quando **tutti** i **thread** appartenenti allo stesso warp **accedono** allo **stesso indirizzo di memoria** contemporaneamente. 
+
+### **Constant VS Global**
+Supponendo che una grande quantità di **thread** **richiedono** lo **stesso dato**, vediamo come questo può essere trasmesso molto più facilmente tramite la constant memory rispetto che alla global memory.
+
+- Nella **global** memory, il primo accesso alla memoria necessita **copiare** il dato nella **cache L2**, poichè questa si comporta come **buffer**, per poi poter trasferire il dato a tutti i thread. Vi è la possibilità che durante il trasferimento, la **L2 perda** questo **dato**, poichè viene **utilizzata** in maniera estensiva da tutti. Per questo motivo può capitare che il dato venga caricato e scaricato più volte dalla L2.
+
+- Nella **constant** memory ci sono meno richieste, quindi probabilmente non verranno persi i dati nella cache a causa di altre letture. Inoltre viene anche **diminuito** il **traffico** sulla **cache L2**.
+
+```c
+// essendo una memoria costante, l'allocazione avviene solo in maniera statica
+__constant__ type variable_name;
+
+cudaMemcpyToSymbol(variable_name, &host_src, sizeof(type),cudaMemcpyHostToDevice);
+``` 
+
+***
+## **Texture Memory**
+Questo tipo di memoria nasce per poter effettuare funzionalità di rendering di video e immagini. La texture memory è **accessibile globalmente** ed ha un buffer, **cache**, **dedicato** diverso dalla cache L2. Anche la **risoluzione** degli **indirizzi** viene fatta mediante **HW dedicato**. Inoltre sono presenti sempre in **HW** **diverse features** aggiuntive, per **operazioni specializzate**.
+
+Importante notare come rappresenta una memoria **read-only** accessibile mediante una **API** chiamata *texture fetch*.
+
+### **Gestione della texture memory**
+Vediamo come è necessario effettuare alcuni passaggi sia sull' host che sul device per poter utilizzare la texture memory.
+
+Sulla CPU bisogna:
+1. **Allocale** la **memoria** sul **device** mediante o la malloc classica oppure la pitched.
+  ```c
+  cudaMalloc((void **)&M_dev, mem_size*sizeof(type))
+  ```
+2. Creare una **texture reference**, questo concetto può essere simile al concetto di puntatore, ma sulla memoria texture. Si definisce l' area dedicata alla texture.
+  ```c
+  /*
+  * datatype, rappresenta il tipo degli elementi di M_dev
+  *dim, rappresenta la dimensione dell' array CUDA, cioè variabile in [1,2,3]
+  */
+  texture <datatype, dim> M_dev_textureRef
+  ```  
+3. Si necessita ora **creare** un **canale**, in questo modo è possibile **trasferire** gli elementi nell' **area** di memoria **allocata** con la **cudaMalloc**, **nella** memoria **texture**.
+
+    Bisogna quindi creare un **channel descriptor**, rappresentativo del canale.
+  ```c
+  //cudaChannelFormatDesc, il tipo per creare il canale
+  cudaChannelFormatDesc M_dev_desc = cudaCreateChannelDesc<datatype>();
+  ```
+
+4. In fine bisogna **collegare**, mediante il canale, la **memoria** allocata mediante la **cudaMalloc**, con la **texture memory** creata precedentemente.
   
+  ```c
+  cudaBindTexture(0,M_dev_textureRef,M_dev,M_dev_desc);
+  ...
+  //bisogna poi ricordare di effettuare l'unbind alla fine delle operazioni
+  cudaUnbindTexture(M_dev_textureRef);
+  ```
+  <br>
+Sulla GPU invece è necessario accedere ai dati utilizzando il texture reference.
+Ovviamente bisogna utilizzare le api decicate citate in precedenza.
 
+```c
+//queste si differenziano a seconda della dimensione CUDA data
+tex1Dfetch(M_dev_textureRef, address)
+...
+tex2Dfetch(M_dev_textureRef, address)
+...
+tex3Dfetch(M_dev_textureRef, address)
+```
 
+### *Esempio*
+In questo esempio sono presenti due versioni analoghe dello stesso algoritmo, in particolare vengono copiati degli elementi da un array verso un altro, andando però a saltare i primi *shift* elementi.
 
+```c
+//Versione con la global memory
+__global__ void shiftCopy(int N, int shift, float ∗odata, float ∗idata){
+  int xid = blockIdx.x ∗ blockDim.x + threadIdx.x;
+  odata[xid] = idata[xid+shift];
+}
 
+//Versione con la texture memory
+__global__ void textureShiftCopy(int N, int shift, float ∗odata){
+  int xid = blockIdx.x ∗ blockDim.x + threadIdx.x;
+  // in questo caso si usa una API per accedere all' array sulla texture
+  odata[xid] = tex1Dfetch(texRef, xid+shift);
+}
 
+// si referenzia un array monodimensionale di float
+texture<float, 1> texRef; 
+ ...
 
+shiftCopy<<<nBlocks, NUM_THREADS>>>(N, shift, d_out, d_inp);
+// CREATE CHANNEL DESC
+cudaChannelFormatDesc d_a_desc = cudaCreateChannelDesc<float>(); 
+// BIND TEXTURE MEMORY
+cudaBindTexture(0, texRef, d_a, d_a_desc); 
+textureShiftCopy<<<nBlocks, NUM_THREADS>>>(N, shift, d_out);
+```
 
+Nel caso in cui si hanno delle schede video dalle kepler in poi non è più necessario effettuare il binding esplicito tra l'array in global memory e l' array nella texture memory.
+```c
+__global__ void kernel_copy(float ∗odata, float ∗idata) {
+  int index = blockIdx.x ∗ blockDim.x + threadIdx.x;
+  // __ldg rappresenta la nuova API
+  odata[index] = __ldg(idata[index]);
+}
+```
+***
+## **Local Memory**
+La local memory viene utilizzata quando si necessitano più registri rispetto a quelli disponibili, è una memoria di appoggio. In genere è sempre meglio evitarne l' utilizzo.
 
-
-
-
-
-
+Per conoscere più informaizoni a rigurado è possibile lanciare questo comando.
+```bash
+# con il numero della CC invece di XX
+nvcc -arch=sm_XX -ptxas-options=-v kernel.cu
+``` 
