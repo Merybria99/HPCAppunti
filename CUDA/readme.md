@@ -1009,6 +1009,16 @@ Vediamo come è possibile **ottenere** **tre** possibili **configurazioni** diff
       __shared__ float matr[TILE_DIM][TILE_DIM+1];
       ``` 
 
+*** 
+## Shared memory nella gestione di fetch multiple
+Nel caso in cui io debba andare a leggere dei dati in modo continuativo nel kernel è possibile andare a caricare dei dati dalla global memory al suo interno in modo da rendere l'accesso più veloce.
+
+Esempio è nel caso della moltiplicazione tra due matrici dove gli stessi dati devono essere ripetutamente letti per poter eseguire le operazioni.
+
+Per questo si effettua una suddivisione delle matrici in modo che i thread del blocco accedano unicamente ad una parte della matrice e che quella parte della matrice sia nella shared memory associata al blocco allora è come se i thread acccedano ad una cache velocizzando di 100/200 volte la esecuzione del programma. 
+
+Infine al termine si combineranno tutti i risultati in modo da ottenere la ttalità della soluzione.
+
 
 ***
 ## **Constant Memory**
@@ -1130,3 +1140,176 @@ Per conoscere più informaizoni a rigurado è possibile lanciare questo comando.
 # con il numero della CC invece di XX
 nvcc -arch=sm_XX -ptxas-options=-v kernel.cu
 ``` 
+
+***
+
+# **API bloccanti e non bloccanti**
+
+Nelle API CUDA sono definite delle API bloccanti e non bloccanti le quali effettuano delle sincronizzazioni implicite ed esplicite tra il kernel e il resto della sequenza.
+
+
+- **Bloccanti**:
+  - Ritorna il controllo all'host solo quand terminata la esecuzione sul device;
+  - Esempio sono : le allocazioni di memoria sul device, trasferimenti di memoria da 64 KB e le allocazioni di pagine di memoria sull'host;
+
+- **Non Bloccanti**: 
+  - Ritorna immediaramente il controllo all'host;
+  - Esempi sono : i trasferimenti di memoria maggiori di 64KB , le chiamate dei Kernel, inizializzazione dell memoria sul device(memset), copie di memoria da device a device,...;
+  - Funzioni **asincrone** che permettono la sovrapposzione di esecuzione di CPU e Device;
+
+Chiaramente la decisione di effettuare delle operazioni  **sincrone**  introduce dei tempi morti che causano un decremento delle prestazioni notevole il quale va ad abbassare le performance del sistema.
+
+
+## **CUDA Streams**
+
+Attraverso l'impiego dei CUDA streams è possibile andare a implementare la sovrapposizione di più task paralleli all'interno della esecuzione (interleave).
+
+Questa suddivisione è basata sul concetto di pipe dove un task viene suddiviso in task più piccoli che vengono lanciati in modo sequenziale, così da permettere la loro esecuzione in più fasi in maniera contemporanea.
+
+L'hardware della GPU implementa una serie di **STREAM** (code di esecuzione), le quali sono più di una e che hanno al loro interno delle operazioni eseguite con un meccanismo FIFO.
+
+Avendo a disposizione più stream posso eseguire le operazioni inserite nello stream in un qualsiasi ordine.
+
+Normalmente viene adoperato unicamente lo stream 0 (defalut stream), quindi tutte le operazioni che sono associate ad altri stream partono solo dopo che lo stream 0 si è svuotato. Quindi anche se impieghiamo gli altri stream , se viene inserita anche una unica operazione al suo interno essa verrà eseguita per prima e nessuna altra operazione potrà essere effettuata.
+
+**L'uso dello stream 0 introduce una sincronizzazione implicita**  all'interno della esecuzione con più stream **al momento della introduzione anche di un unico task** al suo interno.
+
+Per questa ragione è necessario andare a valutare correttamente la disposizione dei task negli stream in modo da permettere, qualora siano richieste, delle parallelizzazioni ed evitando delle esecuzioni sequenziali che vanno a diminuire le prestazioni del programma.
+
+<br/>
+  <img src="immagini/streams.png" width="750"/>
+<br/>
+<br/>
+
+## **Sincronizzazione tra Streams**
+
+Esistono delle API esplicite di sincronizzazione tra i vari streams e delle condizioni di sincronizzazione implicite che condizionano l'esecuzione del programma sul device.
+
+### **API Esplicite**
+
+Esistono diverse API esplicite che permettono la sincronizzazione, tra queste:
+
+#### **cudaDeviceSynchronize()**
+
+Questa API causa il blocco del codice sull'host finchè una operazione su uno stream non è stata completata. Essa viene eseguita dall'host.
+
+#### **cudaStreamSynchronize(stream)**
+
+Questa API causa il blocco del codice sull'host finchè  tutte le operazioni sullo stream specificato non sono state completate. Essa viene eseguita dall'host.
+
+#### **cudastreamWaitEvent(stream,event)**
+
+Questa API causa il blocco delle operazioni su uno stream fino alla esecuzione dell'evento specificato.
+
+### **Sincronizzazioni implicite**
+
+Sono date da tute le sincronizzazioni che venfono effetuate in seguito alle eventualità precedentemente riportate.
+Esempio sono:
+- Allocazione di memoria;
+- Task affidati allo stream di default;
+- Operazioni di allocazione di pagine di memoria;
+...
+
+## **Gestione dei CUDA Streams**
+
+Gli stream vengono creati e distrutti come se fossero oggetti.
+
+```c
+    cudaStreamCreate();
+    cudaStreamSynchronize();
+    cudaStreamDestroy();
+```
+
+L'applicazione degli stream è interessante nel lanciare più kernel su una stessa GPU, generalmente dei kernel diversi tra loro.
+
+I calcoli adottati precedentemente devono essere riformulati in modo da poter far eseguie in maniera parallela più kernel all'interno della GPU.
+
+Inoltre è necessario effettuare dei **trasferimenti di dati** **non bloccanti**, ovvero il trasferimento è affidato ad uno stream  mentre le operazioni sui dati su di un altro. 
+Questo però viene effettuato facendo sì che le **operazini che dipendono dai dati trasferiti siano opportunemente sincronizzate con i trasferimenti**.
+
+
+Essendo inoltre presente una asincronicità, attraverso l'uso di stream è possibile far **eseguire altre operazioni alla CPU mentre il kernel è in esecuzione sulla GPU** in modo da evitare dei tempi di **idle** (esempio: preparazione di altri dati per la esecuzione di kernel successivi su altri stream).
+
+## Esecuzione di un programma con più stream
+
+```c
+    cudaStreamCreate(stream1);
+    cudaStreamCreate(stream2);
+
+    // esecuzione concorrente dello stesso kernel su due streams diversi
+    Kernel_1<<<blocks, threads, SharedMem, stream1>>>(inp_1, out_1);
+    Kernel_1<<<blocks, threads, SharedMem, stream2>>>(inp_2, out_2);
+
+    // esecuzione concorrente di due kernel su due streams diversi
+    Kernel_1<<<blocks, threads, SharedMem, stream1>>>(inp_1, out_1);
+    Kernel_2<<<blocks, threads, SharedMem, stream2>>>(inp_2, out_2);
+
+    cudaStreamDestroy(stream1);
+    cudaStreamDestroy(stream2);
+```
+Nella immagine venono effettuate le seguenti operazioni:
+
+- Dapprima vengono creti due streams;
+- In seguito viene lanciao lo stesso kernel su due streams diversi;
+- Poi vengono lanciati due kernel differenti su due streams diversi;
+- Infine avviene la distruzione di entrambi gli streams creati.
+
+Queste chiamate introducono uan sincronizzazione implicita di quelle che sono le esecuzioni al termine della esecuzione dei ue Kernel.
+
+## **Chiamate di trasferimento asincrone**
+
+Le chiamate di trasferimento asincrone permettono di poter andare a effettuare dei trasferimenti. Esse devono conoscere quale stream usare per effettuare il trasferimento e deve **essere lo stesso stream per prendere i dati, lanciare il kernel e effettuare l'ultimo trasferimento dalla GPU alla CPU**.
+
+Le chiamate sono asincrone quindi possono essere effettuati ulteriori preparazioni di dati mentre è in esecuzione un altro kernel.
+
+#### **Attenzione**
+
+Nel caso in cui si effettui una esecuzione di un programma attraverso stream, la **memoria su host** non deve essere allocatra mediante una semplice malloc, ma deve essere adoperata una::
+
+```c
+  ​cudaError_t cudaMallocHost ( void** ptr, size_t size )
+```
+```c
+    cudaStreamCreate(stream_a);
+    cudaStreamCreate(stream_b);
+
+    cudaMallocHost(h_buffer_a, buffer_a_size);
+    cudaMallocHost(h_buffer_b, buffer_b_size);
+
+    cudaMalloc(d_buffer_b, buffer_a_size);
+    cudaMalloc(d_buffer_b, buffer_b_size);
+
+    cudaMemcpyAsync(d_buffer_a, h_buffer_a, buffer_a_size, cudaMemcpyHostToDevice, stream_a);
+    cudaMemcpyAsync(d_buffer_b, h_buffer_b, buffer_b_size, cudaMemcpyDeviceToHost, stream_b);
+
+    cudaStreamDestroy(stream_a);
+    cudaStreamDestroy(stream_b);
+
+    cudaFreeHost(h_buffer_a);
+    cudaFreeHost(h_buffer_b);
+```
+
+## ***Esempio:***
+
+Inseriamo di seguito il template di esecuzione attraverso 4 stream.
+
+```c
+  cudaStream_t stream[4];
+  for(int i=0;i<4;++i) cudaStreamCreate(&stream[i]);
+  float* hPtr;
+  cudaMallocHost((void**)&hPtr,4 * size);
+  for(int i=0;i<4;++i){
+    cudaMemcpyAsync(d_inp+i*size,hPtr+i*size,ize,cudaMemcpyHostToDevice,stream[i]);
+    MyKernel<<<100,512,0,stream[i]>>>(d_out+i*size,d_imp+i*size,size);
+    cudaMemcpyAsync(hPtr+i*size,d_out+i*size,size, cudaMemcpyDeviceToHost,stream[i]);
+  }
+  cudaDeviceSynchronize();
+  for(int i=0;i<4;++i) cudaStreamDestry(&stream[i]);
+
+```
+<br/>
+  <img src="immagini/AsyncExample.png" width="750"/>
+<br/>
+
+Viene crata una struttura formata d aquattro streams. Una volta allocata la memoria sull'host , viene lanciato lo stesso kernel su tutti gli streams con dimensioni associate dimensionate rispetto alle risorse disponibili.
+
